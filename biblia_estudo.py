@@ -18,7 +18,8 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-MODELO = "gemini-3.8-flash"
+# O primeiro é o principal; se falhar, a app tenta o seguinte
+MODELOS = ["gemini-3.8-flash", "gemini-3.8-flash-lite"]
 
 PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
 literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
@@ -87,22 +88,26 @@ def cliente():
 def analisar(passagem: str, texto: str) -> dict:
     extra = f"Texto fornecido:\n{texto}" if texto.strip() else ""
     ultimo_erro = None
-    for tentativa in range(3):
-        try:
-            resp = cliente().models.generate_content(
-                model=MODELO,
-                contents=PROMPT.format(passagem=passagem, texto_extra=extra),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json", temperature=0.3
-                ),
-            )
-            return json.loads(resp.text)
-        except Exception as e:
-            ultimo_erro = e
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                time.sleep(3 * (tentativa + 1))
-                continue
-            raise
+    for modelo in MODELOS:
+        for tentativa in range(3):
+            try:
+                resp = cliente().models.generate_content(
+                    model=modelo,
+                    contents=PROMPT.format(passagem=passagem, texto_extra=extra),
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json", temperature=0.3
+                    ),
+                )
+                return json.loads(resp.text)
+            except Exception as e:
+                ultimo_erro = e
+                msg = str(e)
+                if "503" in msg or "UNAVAILABLE" in msg:
+                    time.sleep(2 * (tentativa + 1))
+                    continue
+                if "404" in msg or "NOT_FOUND" in msg:
+                    break  # este modelo não existe, passa ao seguinte
+                raise
     raise ultimo_erro
 
 
