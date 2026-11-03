@@ -19,7 +19,7 @@ from google import genai
 from google.genai import types
 
 # O primeiro é o principal; se falhar, a app tenta o seguinte
-MODELOS = ["gemini-3.8-flash", "gemini-2.5-flash-lite"]
+MODELOS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
 
 PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
 literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
