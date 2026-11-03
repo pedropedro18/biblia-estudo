@@ -31,7 +31,7 @@ from google.genai import types
 # O primeiro é o principal; se falhar, a app tenta o seguinte
 MODELOS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
 
-FONTE_PDF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DejaVuSans.ttf")
+FONTE_PDF = os.path.join(os.path.dirname(os.path.abspath(_file_)), "DejaVuSans.ttf")
 
 PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
 literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
@@ -115,8 +115,8 @@ def analisar(passagem: str, texto: str) -> dict:
                 ultimo_erro = e
                 msg = str(e)
                 if "503" in msg or "UNAVAILABLE" in msg:
-                    time.sleep(4 * (tentativa + 2))
-                    continue
+                    time.sleep(2)
+                    break  # passa logo ao modelo seguinte
                 if "404" in msg or "NOT_FOUND" in msg:
                     break  # este modelo não existe, passa ao seguinte
                 raise
