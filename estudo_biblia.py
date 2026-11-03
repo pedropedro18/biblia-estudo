@@ -1,0 +1,167 @@
+"""
+Estudo Bíblico em Contexto Judaico
+----------------------------------
+Instalar:  pip install streamlit google-genai
+Chave:     set GEMINI_API_KEY=a_tua_chave      (Windows)
+           ou .streamlit/secrets.toml -> GEMINI_API_KEY = "..."
+Correr:    streamlit run estudo_biblia.py
+"""
+import json
+import os
+
+import streamlit as st
+from google import genai
+from google.genai import types
+
+MODELO = "gemini-2.5-flash"
+
+PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
+literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
+em português de Portugal, de forma rigorosa e honesta.
+
+Regras:
+- Distingue claramente o que é consenso académico do que é interpretação.
+- NÃO inventes citações do Talmude, Midrash ou Targum. Se não tiveres certeza
+  da referência exata, descreve a ideia sem citar capítulo/página.
+- Onde houver interpretações diferentes (judaica, católica, protestante), mostra-as.
+
+Passagem: {passagem}
+{texto_extra}
+
+Responde APENAS com JSON válido, neste formato:
+{{
+  "resumo": "resumo da passagem em 3-4 frases",
+  "tema": "tema central e temas secundários",
+  "proposito": "propósito do autor e para quem escrevia",
+  "tipo_literario": {{
+    "genero": "ex.: narrativa, lei, poesia, profecia, sabedoria, epístola, apocalíptico",
+    "caracteristicas": "como o género influencia a leitura"
+  }},
+  "autor_data_destinatarios": "autoria, data provável, público original",
+  "contexto_historico": "situação política, social e religiosa",
+  "contexto_judaico": {{
+    "costumes_e_cultura": "costumes, vida diária, honra/vergonha, família, etc.",
+    "festas_e_templo": "festas, sacrifícios, sinagoga, templo, se relevante",
+    "leitura_judaica": "como a tradição judaica (Targum, Midrash, Talmude, Rashi) lê este texto",
+    "conceitos_hebraicos": "ideias hebraicas por trás do texto (ex.: shalom, hesed, torá)"
+  }},
+  "estrutura": ["bloco 1 (versículos): descrição", "bloco 2 ..."],
+  "exegese": {{
+    "observacoes": "observações versículo a versículo, de forma resumida",
+    "palavras_chave": [
+      {{"palavra": "", "original": "hebraico/grego", "transliteracao": "", "significado": ""}}
+    ],
+    "dificuldades": "problemas de tradução, variantes ou passagens debatidas"
+  }},
+  "textos_relacionados": [
+    {{"referencia": "Livro cap:vers", "relacao": "paralelo / citação / eco / contraste e porquê"}}
+  ],
+  "teologia": "o que o texto revela sobre Deus, o ser humano, a aliança, a salvação",
+  "aplicacao": "aplicação para hoje, fiel ao sentido original",
+  "perguntas": ["pergunta de reflexão 1", "pergunta 2", "pergunta 3"]
+}}"""
+
+
+@st.cache_resource
+def cliente():
+    chave = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
+    if not chave:
+        st.error("Falta a GEMINI_API_KEY.")
+        st.stop()
+    return genai.Client(api_key=chave)
+
+
+@st.cache_data(show_spinner=False)
+def analisar(passagem: str, texto: str) -> dict:
+    extra = f"Texto fornecido:\n{texto}" if texto.strip() else ""
+    resp = cliente().models.generate_content(
+        model=MODELO,
+        contents=PROMPT.format(passagem=passagem, texto_extra=extra),
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json", temperature=0.3
+        ),
+    )
+    return json.loads(resp.text)
+
+
+def bloco(titulo: str, conteudo):
+    st.subheader(titulo)
+    if isinstance(conteudo, dict):
+        for k, v in conteudo.items():
+            st.markdown(f"*{k.replace('_', ' ').capitalize()}*")
+            st.write(v)
+    elif isinstance(conteudo, list):
+        for item in conteudo:
+            st.markdown(f"- {item}")
+    else:
+        st.write(conteudo)
+
+
+def para_markdown(passagem: str, d: dict) -> str:
+    linhas = [f"# Estudo: {passagem}\n"]
+    for k, v in d.items():
+        linhas.append(f"## {k.replace('_', ' ').capitalize()}")
+        linhas.append(json.dumps(v, ensure_ascii=False, indent=2) if not isinstance(v, str) else v)
+        linhas.append("")
+    return "\n".join(linhas)
+
+
+# ---------------- Interface ----------------
+st.set_page_config(page_title="Estudo Bíblico", page_icon="📖", layout="wide")
+st.title("📖 Estudo Bíblico em Contexto Judaico")
+
+with st.sidebar:
+    passagem = st.text_input("Passagem", placeholder="Ex.: João 3:1-21, Salmo 23, Gn 22")
+    texto = st.text_area("Texto (opcional)", height=150,
+                         help="Cola o texto se quiseres analisar uma tradução específica.")
+    ir = st.button("Estudar", type="primary", use_container_width=True)
+
+if ir and passagem.strip():
+    with st.spinner("A preparar o estudo..."):
+        try:
+            dados = analisar(passagem.strip(), texto)
+        except Exception as e:
+            st.error(f"Erro: {e}")
+            st.stop()
+    st.session_state["dados"], st.session_state["passagem"] = dados, passagem
+
+if "dados" in st.session_state:
+    d, p = st.session_state["dados"], st.session_state["passagem"]
+    st.header(p)
+    st.info(d.get("resumo", ""))
+
+    abas = st.tabs(["Visão geral", "Contexto judaico", "Exegese",
+                    "Textos relacionados", "Teologia e aplicação"])
+
+    with abas[0]:
+        bloco("Tema", d.get("tema"))
+        bloco("Propósito", d.get("proposito"))
+        bloco("Tipo literário", d.get("tipo_literario"))
+        bloco("Autor, data e destinatários", d.get("autor_data_destinatarios"))
+        bloco("Estrutura", d.get("estrutura", []))
+
+    with abas[1]:
+        bloco("Contexto histórico", d.get("contexto_historico"))
+        bloco("Contexto judaico", d.get("contexto_judaico"))
+
+    with abas[2]:
+        ex = d.get("exegese", {})
+        bloco("Observações", ex.get("observacoes"))
+        st.subheader("Palavras-chave")
+        st.table(ex.get("palavras_chave", []))
+        bloco("Dificuldades e debates", ex.get("dificuldades"))
+
+    with abas[3]:
+        st.subheader("Textos relacionados")
+        for t in d.get("textos_relacionados", []):
+            st.markdown(f"*{t.get('referencia')}* — {t.get('relacao')}")
+
+    with abas[4]:
+        bloco("Teologia", d.get("teologia"))
+        bloco("Aplicação", d.get("aplicacao"))
+        bloco("Perguntas para reflexão", d.get("perguntas", []))
+
+    st.download_button("⬇️ Descarregar estudo (.md)", para_markdown(p, d),
+                       file_name=f"estudo_{p.replace(' ', '_')}.md")
+else:
+    st.write("Escreve uma passagem na barra lateral e clica em *Estudar*.")
