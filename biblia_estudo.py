@@ -2,10 +2,14 @@
 Estudo Bíblico em Contexto Judaico
 ----------------------------------
 Instalar:  pip install streamlit google-genai
-Chave:     set GEMINI_API_KEY=a_tua_chave      (Windows)
-           ou .streamlit/secrets.toml -> GEMINI_API_KEY = "..."
-Correr:    streamlit run estudo_biblia.py
+Correr:    streamlit run biblia_estudo.py
+
+Secrets (.streamlit/secrets.toml ou Streamlit Cloud -> Settings -> Secrets):
+    GEMINI_API_KEY = "a_chave_do_gemini"
+    ACCESS_CODE = "a_senha_para_os_alunos"
+    CONTACTO = "WhatsApp: +244 ..."     (opcional)
 """
+import hmac
 import json
 import os
 
@@ -62,9 +66,16 @@ Responde APENAS com JSON válido, neste formato:
 }}"""
 
 
+def segredo(nome: str) -> str:
+    try:
+        return os.getenv(nome) or st.secrets.get(nome, "")
+    except Exception:
+        return os.getenv(nome, "")
+
+
 @st.cache_resource
 def cliente():
-    chave = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
+    chave = segredo("GEMINI_API_KEY")
     if not chave:
         st.error("Falta a GEMINI_API_KEY.")
         st.stop()
@@ -88,7 +99,7 @@ def bloco(titulo: str, conteudo):
     st.subheader(titulo)
     if isinstance(conteudo, dict):
         for k, v in conteudo.items():
-            st.markdown(f"*{k.replace('_', ' ').capitalize()}*")
+            st.markdown(f"{k.replace('_', ' ').capitalize()}")
             st.write(v)
     elif isinstance(conteudo, list):
         for item in conteudo:
@@ -106,26 +117,55 @@ def para_markdown(passagem: str, d: dict) -> str:
     return "\n".join(linhas)
 
 
+def aviso_sem_acesso():
+    contacto = segredo("CONTACTO")
+    msg = ("🔒 Para ver o resultado do estudo precisa da *chave de acesso*. "
+           "Obtenha a senha com o Teacher Pedro e escreva-a na barra lateral.")
+    if contacto:
+        msg += f"\n\n{contacto}"
+    st.warning(msg)
+
+
 # ---------------- Interface ----------------
 st.set_page_config(page_title="Estudo Bíblico", page_icon="📖", layout="wide")
 st.title("📖 Estudo Bíblico em Contexto Judaico")
+
+codigo_certo = segredo("ACCESS_CODE")
 
 with st.sidebar:
     passagem = st.text_input("Passagem", placeholder="Ex.: João 3:1-21, Salmo 23, Gn 22")
     texto = st.text_area("Texto (opcional)", height=150,
                          help="Cola o texto se quiseres analisar uma tradução específica.")
+    senha = st.text_input("Chave de acesso", type="password",
+                          help="Peça a senha ao Teacher Pedro.")
     ir = st.button("Estudar", type="primary", use_container_width=True)
 
-if ir and passagem.strip():
-    with st.spinner("A preparar o estudo..."):
-        try:
-            dados = analisar(passagem.strip(), texto)
-        except Exception as e:
-            st.error(f"Erro: {e}")
-            st.stop()
-    st.session_state["dados"], st.session_state["passagem"] = dados, passagem
+# Verifica a senha (sem senha configurada, ninguém entra)
+tem_acesso = bool(codigo_certo) and hmac.compare_digest(
+    senha.encode("utf-8"), codigo_certo.encode("utf-8")
+)
 
-if "dados" in st.session_state:
+if ir and passagem.strip():
+    if not codigo_certo:
+        st.error("A app ainda não tem ACCESS_CODE configurado nos Secrets.")
+    elif not senha:
+        aviso_sem_acesso()
+    elif not tem_acesso:
+        st.error("Chave de acesso incorrecta.")
+        aviso_sem_acesso()
+    else:
+        with st.spinner("A preparar o estudo..."):
+            try:
+                dados = analisar(passagem.strip(), texto)
+            except Exception as e:
+                st.error(f"Erro: {e}")
+                st.stop()
+        st.session_state["dados"], st.session_state["passagem"] = dados, passagem
+elif ir:
+    st.info("Escreve uma passagem na barra lateral.")
+
+# Só mostra resultados a quem tem a senha certa
+if tem_acesso and "dados" in st.session_state:
     d, p = st.session_state["dados"], st.session_state["passagem"]
     st.header(p)
     st.info(d.get("resumo", ""))
@@ -154,7 +194,7 @@ if "dados" in st.session_state:
     with abas[3]:
         st.subheader("Textos relacionados")
         for t in d.get("textos_relacionados", []):
-            st.markdown(f"*{t.get('referencia')}* — {t.get('relacao')}")
+            st.markdown(f"{t.get('referencia')} — {t.get('relacao')}")
 
     with abas[4]:
         bloco("Teologia", d.get("teologia"))
@@ -163,5 +203,7 @@ if "dados" in st.session_state:
 
     st.download_button("⬇️ Descarregar estudo (.md)", para_markdown(p, d),
                        file_name=f"estudo_{p.replace(' ', '_')}.md")
-else:
-    st.write("Escreve uma passagem na barra lateral e clica em *Estudar*.")
+elif not ir:
+    st.write("Escreve uma passagem na barra lateral, a chave de acesso, e clica em Estudar.")
+    if not tem_acesso:
+        aviso_sem_acesso()
