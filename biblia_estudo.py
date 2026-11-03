@@ -1,8 +1,16 @@
 """
 Estudo Bíblico em Contexto Judaico
 ----------------------------------
-Instalar:  pip install streamlit google-genai
+Instalar:  pip install streamlit google-genai fpdf2
 Correr:    streamlit run biblia_estudo.py
+
+Ficheiros necessários na mesma pasta:
+    DejaVuSans.ttf   (fonte para PDF com acentos e grego)
+
+requirements.txt:
+    streamlit
+    google-genai
+    fpdf2
 
 Secrets (.streamlit/secrets.toml ou Streamlit Cloud -> Settings -> Secrets):
     GEMINI_API_KEY = "a_chave_do_gemini"
@@ -12,14 +20,18 @@ Secrets (.streamlit/secrets.toml ou Streamlit Cloud -> Settings -> Secrets):
 import hmac
 import json
 import os
+import re
 import time
 
 import streamlit as st
+from fpdf import FPDF
 from google import genai
 from google.genai import types
 
 # O primeiro é o principal; se falhar, a app tenta o seguinte
 MODELOS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+
+FONTE_PDF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DejaVuSans.ttf")
 
 PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
 literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
@@ -115,7 +127,7 @@ def bloco(titulo: str, conteudo):
     st.subheader(titulo)
     if isinstance(conteudo, dict):
         for k, v in conteudo.items():
-            st.markdown(f"*{k.replace('_', ' ').capitalize()}*")
+            st.markdown(f"{k.replace('_', ' ').capitalize()}")
             st.write(v)
     elif isinstance(conteudo, list):
         for item in conteudo:
@@ -133,9 +145,55 @@ def para_markdown(passagem: str, d: dict) -> str:
     return "\n".join(linhas)
 
 
+def _texto(v) -> str:
+    """Converte strings, listas e dicionários em texto legível para o PDF."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, list):
+        return "\n".join("• " + _texto(i).replace("\n", "; ") for i in v)
+    if isinstance(v, dict):
+        return "\n".join(
+            f"{k.replace('_', ' ').capitalize()}: {_texto(x)}" for k, x in v.items()
+        )
+    return str(v)
+
+
+def para_pdf(passagem: str, d: dict) -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Com a fonte DejaVu: acentos e grego OK.
+    # Sem ela: usa Helvetica e troca caracteres não suportados por "?".
+    if os.path.exists(FONTE_PDF):
+        pdf.add_font("DejaVu", "", FONTE_PDF)
+        fonte = "DejaVu"
+        limpar = lambda t: t
+    else:
+        fonte = "Helvetica"
+        limpar = lambda t: t.encode("latin-1", "replace").decode("latin-1")
+
+    nl = dict(new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font(fonte, size=18)
+    pdf.multi_cell(0, 10, limpar(f"Estudo: {passagem}"), **nl)
+    pdf.ln(3)
+
+    for k, v in d.items():
+        pdf.set_font(fonte, size=14)
+        pdf.multi_cell(0, 9, limpar(k.replace("_", " ").capitalize()), **nl)
+        pdf.set_font(fonte, size=11)
+        pdf.multi_cell(0, 6, limpar(_texto(v)), **nl)
+        pdf.ln(3)
+
+    return bytes(pdf.output())
+
+
 def aviso_sem_acesso():
     contacto = segredo("CONTACTO")
-    msg = ("🔒 Para ver o resultado do estudo precisa da *chave de acesso*. "
+    msg = ("🔒 Para ver o resultado do estudo precisa da chave de acesso. "
            "Obtenha a senha com o Teacher Pedro e escreva-a na barra lateral.")
     if contacto:
         msg += f"\n\n{contacto}"
@@ -210,15 +268,22 @@ if tem_acesso and "dados" in st.session_state:
     with abas[3]:
         st.subheader("Textos relacionados")
         for t in d.get("textos_relacionados", []):
-            st.markdown(f"*{t.get('referencia')}* — {t.get('relacao')}")
+            st.markdown(f"{t.get('referencia')} — {t.get('relacao')}")
 
     with abas[4]:
         bloco("Teologia", d.get("teologia"))
         bloco("Aplicação", d.get("aplicacao"))
         bloco("Perguntas para reflexão", d.get("perguntas", []))
 
-    st.download_button("⬇️ Descarregar estudo (.md)", para_markdown(p, d),
-                       file_name=f"estudo_{p.replace(' ', '_')}.md")
+    nome = re.sub(r"[^\w\-]+", "_", p)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button("⬇️ Descarregar estudo (.md)", para_markdown(p, d),
+                           file_name=f"estudo_{nome}.md", use_container_width=True)
+    with col2:
+        st.download_button("⬇️ Descarregar estudo (.pdf)", para_pdf(p, d),
+                           file_name=f"estudo_{nome}.pdf", mime="application/pdf",
+                           use_container_width=True)
 elif not ir:
     st.write("Escreve uma passagem na barra lateral, a chave de acesso, e clica em Estudar.")
     if not tem_acesso:
