@@ -17,7 +17,7 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-MODELO = "gemini-2.5-flash"
+MODELO = "gemini-3.8-flash"
 
 PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
 literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
