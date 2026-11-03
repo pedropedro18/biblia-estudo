@@ -7,7 +7,7 @@ Correr:    streamlit run biblia_estudo.py
 Secrets (.streamlit/secrets.toml ou Streamlit Cloud -> Settings -> Secrets):
     GEMINI_API_KEY = "a_chave_do_gemini"
     ACCESS_CODE = "a_senha_para_os_alunos"
-    CONTACTO = "WhatsApp: +244 ..."     (opcional)
+    CONTACTO = "WhatsApp: +244 923030010"     (opcional)
 """
 import hmac
 import json
@@ -19,7 +19,7 @@ from google import genai
 from google.genai import types
 
 # O primeiro é o principal; se falhar, a app tenta o seguinte
-MODELOS = ["gemini-3.8-flash", "gemini-3.8-flash-lite"]
+MODELOS = ["gemini-3.8-flash", "gemini-2.5-flash-lite"]
 
 PROMPT = """És um professor de estudo bíblico com formação em hebraico, grego,
 literatura judaica do Segundo Templo e hermenêutica. Analisa a passagem abaixo
@@ -103,7 +103,7 @@ def analisar(passagem: str, texto: str) -> dict:
                 ultimo_erro = e
                 msg = str(e)
                 if "503" in msg or "UNAVAILABLE" in msg:
-                    time.sleep(2 * (tentativa + 1))
+                    time.sleep(4 * (tentativa + 2))
                     continue
                 if "404" in msg or "NOT_FOUND" in msg:
                     break  # este modelo não existe, passa ao seguinte
