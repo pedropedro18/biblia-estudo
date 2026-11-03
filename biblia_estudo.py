@@ -12,6 +12,7 @@ Secrets (.streamlit/secrets.toml ou Streamlit Cloud -> Settings -> Secrets):
 import hmac
 import json
 import os
+import time
 
 import streamlit as st
 from google import genai
@@ -85,21 +86,31 @@ def cliente():
 @st.cache_data(show_spinner=False)
 def analisar(passagem: str, texto: str) -> dict:
     extra = f"Texto fornecido:\n{texto}" if texto.strip() else ""
-    resp = cliente().models.generate_content(
-        model=MODELO,
-        contents=PROMPT.format(passagem=passagem, texto_extra=extra),
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json", temperature=0.3
-        ),
-    )
-    return json.loads(resp.text)
+    ultimo_erro = None
+    for tentativa in range(3):
+        try:
+            resp = cliente().models.generate_content(
+                model=MODELO,
+                contents=PROMPT.format(passagem=passagem, texto_extra=extra),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json", temperature=0.3
+                ),
+            )
+            return json.loads(resp.text)
+        except Exception as e:
+            ultimo_erro = e
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                time.sleep(3 * (tentativa + 1))
+                continue
+            raise
+    raise ultimo_erro
 
 
 def bloco(titulo: str, conteudo):
     st.subheader(titulo)
     if isinstance(conteudo, dict):
         for k, v in conteudo.items():
-            st.markdown(f"{k.replace('_', ' ').capitalize()}")
+            st.markdown(f"*{k.replace('_', ' ').capitalize()}*")
             st.write(v)
     elif isinstance(conteudo, list):
         for item in conteudo:
@@ -194,7 +205,7 @@ if tem_acesso and "dados" in st.session_state:
     with abas[3]:
         st.subheader("Textos relacionados")
         for t in d.get("textos_relacionados", []):
-            st.markdown(f"{t.get('referencia')} — {t.get('relacao')}")
+            st.markdown(f"*{t.get('referencia')}* — {t.get('relacao')}")
 
     with abas[4]:
         bloco("Teologia", d.get("teologia"))
