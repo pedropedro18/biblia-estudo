@@ -1,3 +1,4 @@
-streamlit
+fastapi
+uvicorn
 google-genai
 fpdf2
